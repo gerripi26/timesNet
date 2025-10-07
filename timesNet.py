@@ -54,8 +54,8 @@ class times_block(nn.Module):
         fin_timeframes=[]
 
         for k in range(self.k_periods):
-            nk_max = p[:, k].max()  # (1): max num columns of period k timeframes across batches
-            mk_max = torch.ceil(T / p[:, k]).max()
+            nk_max = to_int(p[:, k].max())  # (1): max num columns of period k timeframes across batches
+            mk_max = to_int(torch.ceil(T / p[:, k]).max())
 
             pad = (T - T % p[:, k]) % p[:, k]  # (B): pad for 1D time of period k for each batch
             n = p[:, k]                        # (B): num columns of 2D timeframe of period k for each batch
@@ -64,17 +64,21 @@ class times_block(nn.Module):
             batch_timeframes = []
             batch_mask = []
             for b in range(B):
-                timeframe_b_k = F.pad(x[b], (0,0, 0,pad[b]),) # (T, C): pad time dim
+                pad_b = pad[b]
+                m_b = m[b]
+                n_b = n[b]
+
+                timeframe_b_k = F.pad(x[b], (0,0, 0,pad_b),) # (T, C): pad time dim
 
                 mask_b_k = x[b].new_ones(T, 1)
-                mask_b_k = F.pad(mask_b_k,(0,0, 0,pad[b]))
+                mask_b_k = F.pad(mask_b_k,(0,0, 0,pad_b))
 
                 # 2D transform
-                timeframe_b_k = rearrange(timeframe_b_k, '(m n) c -> m n c', n=to_int(n[b]))
-                timeframe_b_k = F.pad(timeframe_b_k, (0,0, 0,nk_max - n[b], 0,mk_max - m[b]))  # pad to match dims across batches for fixed k
+                timeframe_b_k = rearrange(timeframe_b_k, '(m n) c -> m n c', n=n_b)
+                timeframe_b_k = F.pad(timeframe_b_k, (0,0, 0,nk_max - n_b, 0,mk_max - m_b))  # pad to match dims across batches for fixed k
 
-                mask_b_k = rearrange(mask_b_k,'(m n) c -> m n c', n=to_int(n[b]))
-                mask_b_k = F.pad(mask_b_k,(0,0, 0,nk_max - n[b], 0,mk_max - m[b]))
+                mask_b_k = rearrange(mask_b_k,'(m n) c -> m n c', n=n_b)
+                mask_b_k = F.pad(mask_b_k,(0,0, 0,nk_max - n_b, 0,mk_max - m_b))
 
                 batch_timeframes.append(timeframe_b_k) # (M_max, N_max, C)
                 batch_mask.append(mask_b_k)
@@ -88,7 +92,7 @@ class times_block(nn.Module):
             # flatten to 1D
             fin_timeframes_k = []
             for b in range(B):
-                timeframe_b_k = timeframes_k[b, :m[b], :n[b], :]  # trunc away pads for M_max/N_max
+                timeframe_b_k = timeframes_k[b, :to_int(m[b]), :to_int(n[b]), :]  # trunc away pads for M_max/N_max
                 timeframe_b_k = rearrange(timeframe_b_k, 'm n c -> (m n) c')  # flatten to 1D
                 timeframe_b_k = timeframe_b_k[:T, :] # trunc away padded time: (T, C)
                 fin_timeframes_k.append(timeframe_b_k)
