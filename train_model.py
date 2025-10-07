@@ -20,7 +20,7 @@ git push origin main
 n_channels = 10
 
 seq_len = 32
-batch_size = 16
+batch_size = 8
 d_embd = 64
 dropout = 0.2
 
@@ -29,8 +29,8 @@ n_timeBlocks = 4
 k_periods = 4
 
 # inception
-n_blocks = 4
-n_heads = 4
+n_blocks = 2
+n_heads = 2
 d_head = d_embd // n_heads
 s_win = 8
 levels = 3
