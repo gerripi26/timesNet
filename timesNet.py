@@ -32,7 +32,7 @@ class periods(nn.Module):
         amps = torch.abs(x_ft)
         amps = torch.mean(amps, dim=-1) # avg across channel dim -> (B,F)
         amps_k, freq_k = torch.topk(amps, k=self.k_periods, dim=-1) # top k_periods amps, frequencies(indices): (B, k) each
-        p_k = T // freq_k
+        p_k = T // (freq_k + 1)  # row 0 = freq 0 sliced out before -> new row 0 refers to freq 1 -> shift freq_k by one
         return amps_k, p_k
 
 class times_block(nn.Module):
@@ -57,7 +57,7 @@ class times_block(nn.Module):
             nk_max = to_int(p[:, k].max())  # (1): max num columns of period k timeframes across batches
             mk_max = to_int(torch.ceil(T / p[:, k]).max())
 
-            pad = (T - T % p[:, k]) % p[:, k]  # (B): pad for 1D time of period k for each batch
+            pad = (-T) % p[:, k]  # (B): pad for 1D time of period k for each batch
             n = p[:, k]                        # (B): num columns of 2D timeframe of period k for each batch
             m = (T + pad) // n
 

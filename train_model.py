@@ -27,7 +27,7 @@ d_head = d_embd // n_heads
 s_win = 8
 levels = 3
 s_region = [32, 16, 8]
-s_pool = [2, 8]
+s_pool = [1, 2, 8]
 theta = 10000
 
 # training
