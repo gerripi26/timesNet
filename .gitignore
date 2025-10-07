@@ -59,10 +59,3 @@ Thumbs.db
 
 # Logs
 *.log
-
-# Data files (optional — keep if you want them tracked)
-*.csv
-*.tsv
-*.dat
-*.npz
-*.h5
