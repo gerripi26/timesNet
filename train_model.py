@@ -11,8 +11,8 @@ from timesNet import timesNet_model
 # hyperparameters
 n_channels = 10
 
-seq_len = 32
-batch_size = 4
+seq_len = 64
+batch_size = 32
 d_embd = 64
 dropout = 0.2
 
@@ -21,8 +21,8 @@ n_timeBlocks = 4
 k_periods = 4
 
 # inception
-n_blocks = 2
-n_heads = 2
+n_blocks = 4
+n_heads = 4
 d_head = d_embd // n_heads
 s_win = 8
 levels = 3
