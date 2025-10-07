@@ -7,12 +7,20 @@ import pandas as pd
 
 from timesNet import timesNet_model
 
+"""
+github: git add .
+git commit -m ""
+git push origin main
+"""
+
+
+
 
 # hyperparameters
 n_channels = 10
 
-seq_len = 64
-batch_size = 32
+seq_len = 32
+batch_size = 16
 d_embd = 64
 dropout = 0.2
 
