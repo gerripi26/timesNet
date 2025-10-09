@@ -68,7 +68,8 @@ def estimate_loss():
                 break
 
             xb, yb = xb.to('cuda'), yb.to('cuda')
-            _, loss = model(xb, yb)
+            pred = model(xb)
+            loss = F.mse_loss(pred[:, seq_len // 2:, :], yb)
             losses[it] = loss
 
         out[split] = losses.mean()
