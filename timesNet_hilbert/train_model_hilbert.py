@@ -54,7 +54,7 @@ class weatherDataset(Dataset):
 
     def __getitem__(self, idx):
         x = self.X[idx : idx+self.seq_len, :]
-        y = self.X[idx+self.seq_len, :]
+        y = self.X[idx+seq_len//2+1: idx+self.seq_len+1, :]   # compare only half a seq_len to each other for loss
         return x, y
 
 @torch.no_grad()
@@ -108,7 +108,7 @@ for epoch in range(n_epochs):
     for it, (xb, yb) in enumerate(train_loader):
         xb, yb = xb.to('cuda'), yb.to('cuda')
         pred = model(xb)
-        loss = F.mse_loss(pred, yb)
+        loss = F.mse_loss(pred[:, seq_len//2:, :], yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
