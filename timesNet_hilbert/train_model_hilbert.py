@@ -1,4 +1,5 @@
 import torch
+from torch.nn import functional as F
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from timesNet_hilbert import timesNet_model
@@ -53,7 +54,7 @@ class weatherDataset(Dataset):
 
     def __getitem__(self, idx):
         x = self.X[idx : idx+self.seq_len, :]
-        y = self.X[idx+1 : idx+self.seq_len+1, :]
+        y = self.X[idx+self.seq_len, :]
         return x, y
 
 @torch.no_grad()
@@ -106,7 +107,8 @@ model.train()
 for epoch in range(n_epochs):
     for it, (xb, yb) in enumerate(train_loader):
         xb, yb = xb.to('cuda'), yb.to('cuda')
-        pred, loss = model(xb, yb)
+        pred = model(xb)
+        loss = F.mse_loss(pred, yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()

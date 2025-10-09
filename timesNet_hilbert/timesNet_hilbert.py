@@ -103,9 +103,6 @@ class times_block(nn.Module):
             amps_t = torch.stack(batch_amps_t, dim=0) # (B, T, C)
             fin_amps_t.append(amps_t)
 
-            print(timeframes_k.shape)
-            print(f_off.shape)
-
             # Inception
             timeframes_k = self.inception(timeframes_k, mask, f_off)  # returns (B,M_max,N_max,C)
 
@@ -190,16 +187,11 @@ class timesNet_model(nn.Module):
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
 
-    def forward(self, input, targets=None):
+    def forward(self, input):
         x = self.embd(input)
         x = self.blocks(x)
         pred = self.embd_back(x)  # (B, T, C)
-
-        if targets is None:
-            loss = None
-        else:
-            loss = F.mse_loss(pred, targets)
-        return pred, loss
+        return pred
 
     def generate(self, context, max_new_pred):   #  context: (B, T_context, C)
         for _ in range(max_new_pred):
