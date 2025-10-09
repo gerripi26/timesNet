@@ -66,6 +66,7 @@ class multi_head(nn.Module):
         self.val = nn.Linear(d_embd, n_heads * d_head, bias=False)
         self.proj_out = nn.Linear(n_heads * d_head, d_embd, bias=False)
 
+        self.d_embd = d_embd
         self.d_head = d_head
         self.n_heads = n_heads
         self.s_win = s_win
@@ -78,9 +79,9 @@ class multi_head(nn.Module):
         idx = torch.arange(0, d_head // 4, device='cuda')
         self.register_buffer('rad', theta ** (-2 * idx / d_head))
 
-    def forward(self, pooled_maps, pooled_masks, windows_q, mask_q, cy, cx):
+    def forward(self, pooled_maps, pooled_masks, feature_map, mask_q, cy, cx, freq_off):
         # query, key, value
-        Q = self.query(windows_q)  # (B, M, N, H*C)
+        Q = self.query(feature_map)  # (B, M, N, H*C)
         K = [self.key(pooled_maps[i]) for i in range(self.levels)]  # l*(B, M, N, H*C)
         V = [self.val(pooled_maps[i]) for i in range(self.levels)]
 
@@ -88,9 +89,13 @@ class multi_head(nn.Module):
         Q = rearrange(Q, 'b m n (h c) -> b h m n c', h=self.n_heads, c=self.d_head)
         mask_q = rearrange(mask_q, 'b Mw Nw sw_sqr c -> b 1 Mw Nw sw_sqr c')  # add n_head dim
 
+        # frequency and Rope embedding
         M_idx = torch.arange(Q.shape[-3], device='cuda')
         N_idx = torch.arange(Q.shape[-2], device='cuda')
-        queries = self.Rope(Q, M_idx, N_idx)
+        M_grid, N_grid = M_idx[:, None], N_idx[None, :]
+        freq_off = rearrange(freq_off, 'b m n c -> b 1 m n c')  # add n_head dim
+        queries = Q * freq_off[..., M_grid, N_grid, :self.d_head] + freq_off[..., M_grid, N_grid, self.d_head:]
+        queries = self.Rope(queries, M_idx, N_idx)
         queries = rearrange(queries, 'b h (Mw sw1) (Nw sw2) c -> b h Mw Nw (sw1 sw2) c', sw1=self.s_win, sw2=self.s_win)
 
         K_levels_regions, mask_K_levels_regions = [], []
@@ -106,19 +111,26 @@ class multi_head(nn.Module):
             cx = cx // self.s_pool[l]
 
             # extract regions
-            K_regions, mask_K, YY, XX = self.extract_regions(K_l, cy, cx, self.s_region[l],
-                                                             pooled_mask_l)  # (B, H, M, N, C)
-            V_regions, _, _, _ = self.extract_regions(V_l, cy, cx, self.s_region[l],
-                                                      pooled_mask_l)  # YY, XX for K/V identical
+            K_regions, mask_K, YY, XX = self.extract_regions(K_l, cy, cx, self.s_region[l], pooled_mask_l)  # (B, H, M, N, C)
+            V_regions, _, _, _ = self.extract_regions(V_l, cy, cx, self.s_region[l], pooled_mask_l)  # YY, XX for K/V identical
 
-            # prepare dims for Rope
+            # prepare dims for frequency embedding and Rope
             M_idx = YY[:, 0, :, 0]  # (Mw, s_region)
             M_idx = rearrange(M_idx, 'Mw sr -> (Mw sr)')
             M_idx = M_idx * self.s_pool[l]  # correct indices by pool strength
+            Mf = freq_off.shape[-3]
+            M_idx = M_idx.clamp(0, Mf-1) # ensure valid idx after scaling with s_pool
 
             N_idx = XX[0, :, 0, :]  # (Nw, s_region)
             N_idx = rearrange(N_idx, 'Nw sr -> (Nw sr)')
             N_idx = N_idx * self.s_pool[l]
+            Nf = freq_off.shape[-2]
+            N_idx = N_idx.clamp(0,  Nf-1)
+
+            # frequency embedding
+            M_grid, N_grid = M_idx[:, None], N_idx[None, :]
+            K_regions = K_regions * freq_off[..., M_grid, N_grid, :self.d_head] + freq_off[..., M_grid, N_grid, self.d_head:]
+            V_regions = V_regions * freq_off[..., M_grid, N_grid, :self.d_head] + freq_off[..., M_grid, N_grid, self.d_head:]
 
             # Rope
             K_regions = self.Rope(K_regions, M_idx, N_idx)  # (B, H, M_idx, N_idx, C)
@@ -141,8 +153,7 @@ class multi_head(nn.Module):
         attn_mask = mask_q.bool() & mask_keys_t.bool()  # (1, 1, Mw, Nw, sw^2, 1) & (1, 1, Mw, Nw, 1, s)
 
         # Attention
-        att = F.scaled_dot_product_attention(queries, keys, vals, attn_mask=attn_mask,
-                                             dropout_p=self.dropout)  # (B, H, Mw, Nw, s_win^2, C)
+        att = F.scaled_dot_product_attention(queries, keys, vals, attn_mask=attn_mask, dropout_p=self.dropout)  # (B, H, Mw, Nw, s_win^2, C)
 
         # out
         att = rearrange(att, 'b h Mw Nw (sw1 sw2) c -> b (Mw sw1) (Nw sw2) (h c)', sw1=self.s_win, sw2=self.s_win)
@@ -234,7 +245,6 @@ class FeedForward(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-
 class block(nn.Module):
     def __init__(self, d_embd, d_head, n_heads, s_win, levels, s_region, s_pool, dropout, theta):
         super().__init__()
@@ -246,7 +256,7 @@ class block(nn.Module):
 
         self.s_win = s_win
 
-    def forward(self, feature_map_in, mask):
+    def forward(self, feature_map_in, mask, freq_off):
         # Layer-Norm 1
         feature_map = self.ln1(feature_map_in)
 
@@ -255,16 +265,14 @@ class block(nn.Module):
 
         # pad feature map for window alignment
         B, M, N, C = feature_map.shape
-        feature_map = rearrange(feature_map, 'b m n c -> b c m n')
         pad_y = (self.s_win - M % self.s_win) % self.s_win
         pad_x = (self.s_win - N % self.s_win) % self.s_win
-        feature_map_pad = F.pad(feature_map, (0, pad_x, 0, pad_y))  # (B, C, M, N)
+        feature_map = F.pad(feature_map, (0, 0, 0, pad_x, 0, pad_y))  # (B, C, M, N)
+        freq_off = F.pad(freq_off, (0, 0, 0, pad_x, 0, pad_y))
 
+        # window coords
         Mw = (M + pad_y) // self.s_win
         Nw = (N + pad_x) // self.s_win
-
-        # windows for queries
-        windows_q = rearrange(feature_map_pad, 'b c m n -> b m n c')
 
         # queries mask
         mask_q = torch.ones((1, 1, M, N), dtype=torch.bool, device='cuda')
@@ -279,7 +287,7 @@ class block(nn.Module):
         cx = torch.arange(Nw, device='cuda') * self.s_win + self.s_win // 2
 
         # MultiHead Attention
-        out = self.att(pooled_maps, pooled_masks, windows_q, mask_q, cy, cx)[:, :M, :N, :]
+        out = self.att(pooled_maps, pooled_masks, feature_map, mask_q, cy, cx, freq_off)[:, :M, :N, :]
         out = out + feature_map_in
 
         # Layer Norm 2, MLP
@@ -294,9 +302,9 @@ class inception(nn.Module):
         self.blocks = nn.ModuleList(
             [block(d_embd, d_head, n_heads, s_win, levels, s_region, s_pool, dropout, theta) for _ in range(n_blocks)])
 
-    def forward(self, feature_map, mask):  # feature_map: (B, M, N, d_embd) -> already embedded in timesNet_model
+    def forward(self, feature_map, mask, freq_off):  # feature_map: (B, M, N, d_embd) -> already embedded in timesNet_model
         for blk in self.blocks:
-            feature_map = blk(feature_map, mask)
+            feature_map = blk(feature_map, mask, freq_off)
         return feature_map
 
 

@@ -1,11 +1,7 @@
 import torch
-import torch.nn as nn
-from torch.nn import functional as F
-from einops import rearrange
-from torch.utils.data import Dataset, DataLoader
 import pandas as pd
-
-from timesNet import timesNet_model
+from torch.utils.data import Dataset, DataLoader
+from timesNet_hilbert import timesNet_model
 
 """
 github: git add .
@@ -27,6 +23,10 @@ dropout = 0.2
 # timesNet
 n_timeBlocks = 4
 k_periods = 4
+
+# filter
+p_cutoff = 0.1
+n_taps = 4  # seq_len has to be increased for this to be meaningful
 
 # inception
 n_blocks = 2
@@ -75,7 +75,7 @@ def estimate_loss():
     return out
 
 # read file
-file = pd.read_csv('weather_prediction_dataset.csv', usecols=range(104,114)) #  munich weather data
+file = pd.read_csv('../weather_prediction_dataset.csv', usecols=range(104, 114)) #  munich weather data
 
 # Train and test splits
 data = torch.tensor(file.values, dtype=torch.float32)  # (T, C)
@@ -96,7 +96,7 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)   
 val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
 # create model
-model = timesNet_model(n_channels, seq_len, d_embd, dropout, n_timeBlocks, k_periods, n_blocks, n_heads, d_head, s_win, levels, s_region, s_pool, theta)
+model = timesNet_model(n_channels, seq_len, d_embd, dropout, n_timeBlocks, k_periods, p_cutoff, n_taps, n_blocks, n_heads, d_head, s_win, levels, s_region, s_pool, theta)
 model = model.to('cuda')
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
