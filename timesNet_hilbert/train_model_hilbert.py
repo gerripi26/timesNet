@@ -15,7 +15,7 @@ git push origin main
 # hyperparameters
 n_channels = 10
 
-seq_len = 32
+seq_len = 64
 batch_size = 8
 d_embd = 64
 dropout = 0.2
@@ -26,7 +26,7 @@ k_periods = 4
 
 # filter
 p_cutoff = 0.1
-n_taps = 4  # seq_len has to be increased for this to be meaningful
+n_taps = 8  # seq_len has to be increased for this to be meaningful
 
 # inception
 n_blocks = 2
@@ -40,7 +40,7 @@ theta = 10000
 
 # training
 n_epochs = 4
-eval_iter = 300
+eval_iter = 50
 
 
 class weatherDataset(Dataset):
